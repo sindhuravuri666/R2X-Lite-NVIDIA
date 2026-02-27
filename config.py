@@ -1,0 +1,7 @@
+LLM_MODEL = "llama3"
+VISION_MODEL = "moondream"
+
+USE_VOICE = True
+USE_VISION = True
+
+SCREEN_RESIZE_WIDTH = 1024
