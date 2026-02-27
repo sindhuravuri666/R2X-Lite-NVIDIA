@@ -1,4 +1,4 @@
-LLM_MODEL = "llama3"
+LLM_MODEL = "mistral"
 VISION_MODEL = "moondream"
 
 USE_VOICE = True
