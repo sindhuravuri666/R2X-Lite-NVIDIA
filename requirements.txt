@@ -1,0 +1,10 @@
+ollama
+faster-whisper
+pyttsx3
+sounddevice
+mss
+Pillow
+pyautogui
+PyQt6
+numpy
+requests
