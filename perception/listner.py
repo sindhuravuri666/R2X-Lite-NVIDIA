@@ -3,7 +3,7 @@ import numpy as np
 import queue
 from faster_whisper import WhisperModel
 
-model = WhisperModel("small", device="cpu", compute_type="int8")
+model = WhisperModel("base", device="cpu", compute_type="int8")
 
 q = queue.Queue()
 
@@ -16,7 +16,7 @@ def listen():
     with sd.InputStream(samplerate=16000, channels=1, callback=audio_callback):
         audio_data = []
         for _ in range(200): 
-            #
+            
             audio_data.append(q.get())
 
     # stack frames and ensure a 1‑D array; Whisper expects a flat waveform
@@ -26,7 +26,6 @@ def listen():
 
     # convert to float32 explicitly (audio device may provide float64)
     audio_np = audio_np.astype(np.float32)
-
     segments, _ = model.transcribe(audio_np, beam_size=5)
 
     text = ""
