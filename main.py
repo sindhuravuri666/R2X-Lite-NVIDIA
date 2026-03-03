@@ -35,14 +35,8 @@ def handle_response(response):
         args = data["args"]
 
         if tool_name in TOOLS:
-            confirmation = input(f"⚠️ Execute {tool_name} with {args}? (yes/no): ")
-
-            if confirmation.lower() == "yes":
-                result = TOOLS[tool_name](**args)
-                speak(f"{result}")
-            else:
-                speak("Okay, I will not execute that.")
-
+            result = TOOLS[tool_name](**args)
+            speak(result)
         else:
             speak(response)
 
@@ -56,3 +50,9 @@ while True:
     response = call_llm(full_prompt)
 
     handle_response(response)
+
+    follow_up = input("Do you want anything else? (yes/no): ")
+
+    if follow_up.lower() != "yes":
+        speak("Okay, stopping now.")
+        break
