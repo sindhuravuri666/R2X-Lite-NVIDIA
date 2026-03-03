@@ -1,6 +1,8 @@
 from brain.llm import call_llm
 from actions.desktop import open_browser, get_time, open_notepad
 import json
+from perception.listner import listen
+from perception.tts import speak
 
 SYSTEM_PROMPT = """
 You are a desktop AI assistant.
@@ -39,9 +41,13 @@ def handle_response(response):
         print(response)
 
 while True:
-    user_input = input("You: ")
+    user_input = listen()
 
     full_prompt = SYSTEM_PROMPT + "\nUser: " + user_input
     response = call_llm(full_prompt)
 
-    handle_response(response)
+    try:
+        handle_response(response)
+        speak(response)
+    except:
+        speak(response)
