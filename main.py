@@ -6,7 +6,7 @@ from perception.tts import speak
 from perception.vision import capture_screen, analyze_screen
 
 SYSTEM_PROMPT = """
-You are a desktop AI assistant.
+You are a desktop AI assistant..
 
 If the user asks to open a website, return JSON:
 {"tool": "open_browser", "args": {"url": "https://example.com"}}
