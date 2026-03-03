@@ -40,3 +40,4 @@ def listen():
 
     print(f"You said: {text.strip()}")
     return text.strip()
+
