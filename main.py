@@ -5,7 +5,7 @@ from perception.listner import listen
 from perception.tts import speak
 
 SYSTEM_PROMPT = """
-You are a desktop AI assistant.
+You are a desktop AI assistant..
 
 If the user asks to open a website, return JSON:
 {"tool": "open_browser", "args": {"url": "https://example.com"}}
