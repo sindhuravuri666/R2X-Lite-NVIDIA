@@ -10,6 +10,9 @@ You are a desktop AI assistant.
 If the user asks to open a website, return JSON:
 {"tool": "open_browser", "args": {"url": "https://example.com"}}
 
+If the user asks to search on YouTube, return JSON:
+{"tool": "open_browser", "args": {"query": srearch_query}}
+
 If the user asks for time:
 {"tool": "get_time", "args": {}}
 
@@ -32,13 +35,19 @@ def handle_response(response):
         args = data["args"]
 
         if tool_name in TOOLS:
-            result = TOOLS[tool_name](**args)
-            print(f"[TOOL EXECUTED]: {result}")
+            confirmation = input(f"⚠️ Execute {tool_name} with {args}? (yes/no): ")
+
+            if confirmation.lower() == "yes":
+                result = TOOLS[tool_name](**args)
+                speak(f"{result}")
+            else:
+                speak("Okay, I will not execute that.")
+
         else:
-            print(response)
+            speak(response)
 
     except:
-        print(response)
+        speak(response)
 
 while True:
     user_input = listen()
@@ -46,8 +55,4 @@ while True:
     full_prompt = SYSTEM_PROMPT + "\nUser: " + user_input
     response = call_llm(full_prompt)
 
-    try:
-        handle_response(response)
-        speak(response)
-    except:
-        speak(response)
+    handle_response(response)

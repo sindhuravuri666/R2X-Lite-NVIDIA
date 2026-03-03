@@ -15,9 +15,15 @@ def listen():
 
     with sd.InputStream(samplerate=16000, channels=1, callback=audio_callback):
         audio_data = []
-        for _ in range(200): 
-            
+
+# read audio data from the queue for a fixed duration - 10 seconds at 16 kHz means 160,000 samples; with a buffer of 1024 samples, we need about 156 buffers
+# we can read a few extra buffers to ensure we capture the full 10 seconds of audio, hence we read 200 buffers
+        
+        for _ in range(200):
             audio_data.append(q.get())
+        while not q.empty():
+            audio_data.append(q.get())
+            
 
     # stack frames and ensure a 1‑D array; Whisper expects a flat waveform
     audio_np = np.concatenate(audio_data, axis=0)
