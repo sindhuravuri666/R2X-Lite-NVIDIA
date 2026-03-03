@@ -3,6 +3,7 @@ from actions.desktop import open_browser, get_time, open_notepad
 import json
 from perception.listner import listen
 from perception.tts import speak
+from perception.vision import capture_screen, analyze_screen
 
 SYSTEM_PROMPT = """
 You are a desktop AI assistant.
@@ -19,13 +20,23 @@ If the user asks for time:
 If the user asks to open notepad:
 {"tool": "open_notepad", "args": {}}
 
+If the user asks about the screen or what is visible,
+respond with:
+{"tool": "analyze_screen", "args": {}}
+
 Otherwise respond normally in text.
 """
+
+def analyze_screen_tool():
+    image = capture_screen()
+    description = analyze_screen(image)
+    return description
 
 TOOLS = {
     "open_browser": open_browser,
     "get_time": get_time,
-    "open_notepad": open_notepad
+    "open_notepad": open_notepad,
+    "analyze_screen": analyze_screen_tool
 }
 
 def handle_response(response):
@@ -40,8 +51,8 @@ def handle_response(response):
         else:
             speak(response)
 
-    except:
-        speak(response)
+    except Exception as e:
+        speak(f"Error processing response: {e}" + "\nResponse was: " + response)
 
 while True:
     user_input = listen()
