@@ -1,8 +1,13 @@
 import webbrowser
+import urllib.parse
 import datetime
 import subprocess
 
-def open_browser(url):
+def open_browser(url=None, query=None):
+    if query:
+        encoded_query = urllib.parse.quote(query)
+        url = f"https://www.youtube.com/results?search_query={encoded_query}"
+    
     webbrowser.open(url)
     return f"Opened {url}"
 
