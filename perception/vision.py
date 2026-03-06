@@ -19,6 +19,7 @@ def capture_screen():
 
         return img
 
+
 def analyze_screen(image):
     buffered = BytesIO()
     image.save(buffered, format="JPEG")
@@ -30,13 +31,17 @@ def analyze_screen(image):
         OLLAMA_URL,
         json={
             "model": VISION_MODEL,
-            "prompt": "Describe what is visible on this screen.",
+            "prompt": "Describe what is visible on this screen",
             "images": [img_base64],
-            "stream": False
-        }
+            "stream": False,
+        },
+        timeout=15,
     )
 
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError:
+        return f"Vision API returned non-JSON response (status {response.status_code}): {response.text!r}"
 
     if "response" in data:
         return data["response"]

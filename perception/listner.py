@@ -11,7 +11,12 @@ def audio_callback(indata, frames, time, status):
     q.put(indata.copy())
 
 def listen():
-    print("🎤 Listening... Speak now.")
+    # some terminals on Windows can't print the microphone emoji; fall back if
+    # a UnicodeEncodeError occurs
+    try:
+        print("🎤 Listening... Speak now.")
+    except UnicodeEncodeError:
+        print("Listening... Speak now.")
 
     with sd.InputStream(samplerate=16000, channels=1, callback=audio_callback):
         audio_data = []
