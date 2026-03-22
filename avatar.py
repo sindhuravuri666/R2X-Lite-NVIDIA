@@ -21,7 +21,6 @@ from perception.vision import capture_screen, analyze_screen
 
 print("[R2X] All modules ready!")
 
-# Mistral-tuned prompt — explicit, no fluff, JSON only for tools
 SYSTEM_PROMPT = """You are R2X, a desktop AI assistant.
 
 RULES:
@@ -59,13 +58,6 @@ User: hello
 Hello! How can I help you today?
 """
 
-TOOL_CONFIRMATIONS = {
-    "open_browser":   "Opening browser now.",
-    "get_time":       None,
-    "open_notepad":   "Opening Notepad.",
-    "analyze_screen": None,
-}
-
 TOOLS = {
     "open_browser":   open_browser,
     "get_time":       get_time,
@@ -73,13 +65,18 @@ TOOLS = {
     "analyze_screen": lambda: analyze_screen(capture_screen()),
 }
 
+TOOL_CONFIRMATIONS = {
+    "open_browser":   "Opening browser now.",
+    "get_time":       None,
+    "open_notepad":   "Opening Notepad.",
+    "analyze_screen": "Analyzing your screen, please wait.",
+}
+
 def extract_json(text):
-    # Try the whole response first
     try:
         return json.loads(text.strip())
     except Exception:
         pass
-    # Find any {...} block — works even if Mistral adds extra text around it
     try:
         match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
         if match:
@@ -88,30 +85,14 @@ def extract_json(text):
         pass
     return None
 
-def handle_response(response):
-    data = extract_json(response)
-    if data and "tool" in data:
-        tool_name = data.get("tool")
-        args      = data.get("args", {})
-        if tool_name in TOOLS:
-            confirmation = TOOL_CONFIRMATIONS.get(tool_name)
-            if confirmation:
-                speak(confirmation)
-            result = TOOLS[tool_name](**args)
-            if confirmation is None and result:
-                speak(str(result))
-            return
-    # Plain text response
-    speak(response)
-
 
 class AssistantWorker(QThread):
     set_state = pyqtSignal(str)
-    say       = pyqtSignal(str)
     done      = pyqtSignal()
 
     def run(self):
         try:
+            # 1. LISTEN
             self.set_state.emit("listening")
             user_input = listen()
             print(f"You said: {user_input}")
@@ -120,16 +101,39 @@ class AssistantWorker(QThread):
                 self.done.emit()
                 return
 
+            # 2. THINK
             self.set_state.emit("thinking")
             response = call_llm(SYSTEM_PROMPT + "\nUser: " + user_input)
             print(f"AI: {response[:120]}")
 
-            self.say.emit(response)
+            # 3. SPEAK — happens here in the worker, BEFORE done is emitted
+            #    This means the mic is closed and the next cycle cannot start
+            #    until speaking is fully finished.
+            self.set_state.emit("speaking")
+            data = extract_json(response)
+            if data and "tool" in data:
+                tool_name = data.get("tool")
+                args      = data.get("args", {})
+                if tool_name in TOOLS:
+                    confirmation = TOOL_CONFIRMATIONS.get(tool_name)
+                    if confirmation:
+                        speak(confirmation)
+                    result = TOOLS[tool_name](**args)
+                    if confirmation is None and result:
+                        speak(str(result))
+                else:
+                    speak(response)
+            else:
+                speak(response)
+
+            self.set_state.emit("idle")
 
         except Exception as e:
             print(f"Worker error: {e}")
-            self.say.emit("Sorry, something went wrong.")
+            speak("Sorry, something went wrong.")
+
         finally:
+            # 4. Only NOW signal done — next cycle starts after speaking ends
             self.done.emit()
 
 
@@ -183,18 +187,14 @@ class AvatarWindow(QWidget):
         self._busy   = True
         self._worker = AssistantWorker()
         self._worker.set_state.connect(self.set_state)
-        self._worker.say.connect(self._on_say)
         self._worker.done.connect(self._on_done)
         self._worker.start()
 
-    def _on_say(self, response):
-        self.set_state("speaking")
-        handle_response(response)
-        self.set_state("idle")
-
     def _on_done(self):
         self._busy = False
-        QTimer.singleShot(500, self._start_cycle)
+        # 1 second pause after speaking before listening again
+        # so the mic doesn't catch the tail end of TTS audio
+        QTimer.singleShot(1000, self._start_cycle)
 
     def show_avatar(self):
         self.show()
