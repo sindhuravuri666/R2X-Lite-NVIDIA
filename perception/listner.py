@@ -3,37 +3,65 @@ import numpy as np
 import queue
 from faster_whisper import WhisperModel
 
-model = WhisperModel("base", device="cpu", compute_type="int8")
 q = queue.Queue()
+model = None
 
-def audio_callback(indata, frames, time, status):
+
+def get_model():
+    global model
+    if model is None:
+        print("[Lyra] Initializing Whisper...")
+        model = WhisperModel(
+            "tiny",
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=2,
+            num_workers=1
+        )
+        print("[Lyra] Whisper ready!")
+    return model
+
+
+def audio_callback(indata, frames, time_info, status):
+    if status:
+        print(status)
     q.put(indata.copy())
 
+
+def clear_queue():
+    while not q.empty():
+        q.get()
+
+
 def listen():
-    # some terminals on Windows can't print the microphone emoji; fall back if
-    # a UnicodeEncodeError occurs
+    model = get_model()
+    clear_queue()
+
     try:
-        print("🎤 Listening... Speak now.")
+        print("🎤 Listening...")
     except UnicodeEncodeError:
-        print("Listening... Speak now.")
+        print("Listening...")
+
+    audio_data = []
 
     with sd.InputStream(samplerate=16000, channels=1, callback=audio_callback):
-        audio_data = []
-        for _ in range(200):
-            audio_data.append(q.get())
-        while not q.empty():
+        for _ in range(80):   # around a few seconds depending on block size
             audio_data.append(q.get())
 
-    audio_np = np.concatenate(audio_data, axis=0)
-    if audio_np.ndim > 1:
-        audio_np = audio_np.ravel()
-    audio_np = audio_np.astype(np.float32)
+    while not q.empty():
+        audio_data.append(q.get())
 
-    segments, _ = model.transcribe(audio_np, beam_size=5)
+    if not audio_data:
+        return ""
 
-    text = ""
-    for segment in segments:
-        text += segment.text
+    audio_np = np.concatenate(audio_data, axis=0).astype(np.float32).flatten()
 
-    print(f"You said: {text.strip()}")
-    return text.strip()
+    segments, _ = model.transcribe(
+        audio_np,
+        beam_size=1,
+        vad_filter=True
+    )
+
+    text = " ".join(seg.text for seg in segments).strip()
+    print(f"[Heard]: {text}")
+    return text

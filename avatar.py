@@ -2,139 +2,254 @@ import sys
 import os
 import json
 import re
+import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-print("[R2X] Loading Whisper model...")
+print("[Lyra] Loading listener module...")
 from perception.listner import listen
-print("[R2X] Whisper ready!")
+print("[Lyra] Listener ready!")
 
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QMovie
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 from brain.llm import call_llm
 from actions.desktop import open_browser, get_time, open_notepad
 from perception.tts import speak
 from perception.vision import capture_screen, analyze_screen
 
-print("[R2X] All modules ready!")
+print("[Lyra] All modules ready!")
 
-SYSTEM_PROMPT = """You are R2X, a desktop AI assistant.
+IS_SPEAKING = False
 
-RULES:
-- For tool actions, respond with ONLY a JSON object. No extra words, no explanation.
-- For normal conversation, respond with plain text only. No JSON.
+SYSTEM_PROMPT = """You are Lyra, a futuristic AI desktop assistant.
 
-TOOLS (respond with ONLY the JSON shown):
+IMPORTANT RULES:
+1. If a tool is needed, reply with ONLY valid JSON.
+2. Do NOT add explanations.
+3. Do NOT use markdown.
+4. Do NOT use code fences.
+5. Do NOT add any text before or after the JSON.
+6. If no tool is needed, reply with plain text only.
 
-Open a website:
-{"tool": "open_browser", "args": {"url": "URL_HERE"}}
-
-Search YouTube:
-{"tool": "open_browser", "args": {"url": "https://www.youtube.com/results?search_query=QUERY_HERE"}}
-
-Get current time:
+TOOLS:
+{"tool": "open_browser", "args": {"url": "URL"}}
 {"tool": "get_time", "args": {}}
-
-Open Notepad:
 {"tool": "open_notepad", "args": {}}
-
-Analyze screen:
 {"tool": "analyze_screen", "args": {}}
-
-EXAMPLES:
-User: open youtube
-{"tool": "open_browser", "args": {"url": "https://www.youtube.com"}}
-
-User: what time is it
-{"tool": "get_time", "args": {}}
-
-User: search cats on youtube
-{"tool": "open_browser", "args": {"url": "https://www.youtube.com/results?search_query=cats"}}
-
-User: hello
-Hello! How can I help you today?
 """
 
 TOOLS = {
-    "open_browser":   open_browser,
-    "get_time":       get_time,
-    "open_notepad":   open_notepad,
+    "open_browser": open_browser,
+    "get_time": get_time,
+    "open_notepad": open_notepad,
     "analyze_screen": lambda: analyze_screen(capture_screen()),
 }
 
 TOOL_CONFIRMATIONS = {
-    "open_browser":   "Opening browser now.",
-    "get_time":       None,
-    "open_notepad":   "Opening Notepad.",
-    "analyze_screen": "Analyzing your screen, please wait.",
+    "open_browser": "Opening browser.",
+    "get_time": None,
+    "open_notepad": "Opening Notepad.",
+    "analyze_screen": "Analyzing screen.",
 }
 
+
 def extract_json(text):
+    if not text:
+        return None
+
+    text = text.strip()
+
+    # direct parse
     try:
-        return json.loads(text.strip())
+        return json.loads(text)
     except Exception:
         pass
-    try:
-        match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-    except Exception:
-        pass
+
+    # parse JSON inside code fences
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if fenced:
+        try:
+            return json.loads(fenced.group(1))
+        except Exception:
+            pass
+
+    # parse first broad JSON object
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = text[start:end + 1]
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+    return None
+
+
+def handle_direct_command(user_input):
+    """
+    Deterministic command routing for high-confidence local actions.
+    Returns:
+        ("tool", tool_name, args) or None
+    """
+    text = user_input.lower().strip()
+
+    # screen analysis
+    screen_phrases = [
+        "what is on my screen",
+        "what's on my screen",
+        "whats on my screen",
+        "analyze my screen",
+        "analyse my screen",
+        "describe my screen",
+        "read my screen",
+        "what do you see on my screen",
+        "can you see my screen",
+        "tell me what is on my screen",
+    ]
+    if any(p in text for p in screen_phrases):
+        return ("tool", "analyze_screen", {})
+
+    # time
+    time_phrases = [
+        "what time is it",
+        "tell me the time",
+        "current time",
+        "what's the time",
+        "whats the time",
+    ]
+    if any(p in text for p in time_phrases):
+        return ("tool", "get_time", {})
+
+    # notepad
+    notepad_phrases = [
+        "open notepad",
+        "launch notepad",
+        "start notepad",
+    ]
+    if any(p in text for p in notepad_phrases):
+        return ("tool", "open_notepad", {})
+
+    # browser
+    browser_phrases = [
+        "open browser",
+        "launch browser",
+        "start browser",
+        "open google",
+        "go to google",
+    ]
+    if any(p in text for p in browser_phrases):
+        if "google" in text:
+            return ("tool", "open_browser", {"url": "https://www.google.com"})
+        return ("tool", "open_browser", {"url": "https://www.google.com"})
+
     return None
 
 
 class AssistantWorker(QThread):
     set_state = pyqtSignal(str)
-    done      = pyqtSignal()
 
     def run(self):
-        try:
-            # 1. LISTEN
-            self.set_state.emit("listening")
-            user_input = listen()
-            print(f"You said: {user_input}")
+        global IS_SPEAKING
 
-            if not user_input.strip():
-                self.done.emit()
-                return
+        while True:
+            try:
+                if IS_SPEAKING:
+                    time.sleep(0.2)
+                    continue
 
-            # 2. THINK
-            self.set_state.emit("thinking")
-            response = call_llm(SYSTEM_PROMPT + "\nUser: " + user_input)
-            print(f"AI: {response[:120]}")
+                # LISTEN
+                self.set_state.emit("listening")
+                user_input = listen()
 
-            # 3. SPEAK — happens here in the worker, BEFORE done is emitted
-            #    This means the mic is closed and the next cycle cannot start
-            #    until speaking is fully finished.
-            self.set_state.emit("speaking")
-            data = extract_json(response)
-            if data and "tool" in data:
-                tool_name = data.get("tool")
-                args      = data.get("args", {})
-                if tool_name in TOOLS:
+                if not isinstance(user_input, str):
+                    user_input = ""
+
+                user_input = user_input.strip()
+
+                if not user_input:
+                    self.set_state.emit("idle")
+                    time.sleep(0.3)
+                    continue
+
+                print(f"[User]: {user_input}")
+
+                # 1) deterministic direct routing first
+                direct = handle_direct_command(user_input)
+
+                if direct:
+                    _, tool_name, args = direct
+                    print(f"[Direct Tool Route]: {tool_name} {args}")
+
+                    self.set_state.emit("speaking")
+                    IS_SPEAKING = True
+
                     confirmation = TOOL_CONFIRMATIONS.get(tool_name)
                     if confirmation:
                         speak(confirmation)
+
                     result = TOOLS[tool_name](**args)
-                    if confirmation is None and result:
+
+                    if result:
                         speak(str(result))
+
+                    time.sleep(0.4)
+                    IS_SPEAKING = False
+                    self.set_state.emit("idle")
+                    time.sleep(0.3)
+                    continue
+
+                # 2) otherwise ask the LLM
+                self.set_state.emit("thinking")
+                response = call_llm(SYSTEM_PROMPT + "\nUser: " + user_input)
+
+                if not isinstance(response, str):
+                    response = str(response)
+
+                print(f"[Lyra]: {response[:200]}")
+
+                data = extract_json(response)
+                print("[Parsed JSON]:", data)
+
+                self.set_state.emit("speaking")
+                IS_SPEAKING = True
+
+                if isinstance(data, dict) and "tool" in data:
+                    tool_name = data.get("tool")
+                    args = data.get("args", {})
+
+                    if not isinstance(args, dict):
+                        args = {}
+
+                    if tool_name in TOOLS:
+                        confirmation = TOOL_CONFIRMATIONS.get(tool_name)
+
+                        if confirmation:
+                            speak(confirmation)
+
+                        result = TOOLS[tool_name](**args)
+
+                        if result:
+                            speak(str(result))
+                    else:
+                        speak("I don't recognize that tool.")
                 else:
                     speak(response)
-            else:
-                speak(response)
 
-            self.set_state.emit("idle")
+                time.sleep(0.4)
+                IS_SPEAKING = False
+                self.set_state.emit("idle")
+                time.sleep(0.3)
 
-        except Exception as e:
-            print(f"Worker error: {e}")
-            speak("Sorry, something went wrong.")
-
-        finally:
-            # 4. Only NOW signal done — next cycle starts after speaking ends
-            self.done.emit()
+            except Exception as e:
+                print("Error:", e)
+                IS_SPEAKING = False
+                self.set_state.emit("idle")
+                speak("Something went wrong.")
+                time.sleep(0.5)
 
 
 class AvatarWindow(QWidget):
@@ -146,55 +261,40 @@ class AvatarWindow(QWidget):
             Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet("background: transparent;")
-        self.resize(150, 150)
+
+        self.resize(180, 180)
 
         screen = QApplication.primaryScreen().geometry()
-        self.move(screen.width() - 180, screen.height() - 180)
-
-        print("✅ Avatar window initialized")
+        self.move(screen.width() - 220, screen.height() - 220)
 
         self.label = QLabel(self)
-        path = os.path.join(ROOT, "ui", "assets", "avatar.jpg")
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
-            print("❌ Image failed to load")
-        else:
-            print("✅ Image loaded")
+        self.label.resize(180, 180)
 
-        self.label.setPixmap(pixmap)
-        self.label.setScaledContents(True)
-        self.label.resize(150, 150)
+        self.movie = QMovie()
+        self.label.setMovie(self.movie)
 
-        self._worker = None
-        self._busy   = False
+        self.set_state("idle")
 
-        QTimer.singleShot(1000, self._start_cycle)
+        self.worker = AssistantWorker()
+        self.worker.set_state.connect(self.set_state)
+        self.worker.start()
 
     def set_state(self, state):
-        if state == "listening":
-            self.setStyleSheet("border: 4px solid #00BFFF; border-radius: 75px; background: transparent;")
-        elif state == "thinking":
-            self.setStyleSheet("border: 4px solid #8A2BE2; border-radius: 75px; background: transparent;")
-        elif state == "speaking":
-            self.setStyleSheet("border: 4px solid #32CD32; border-radius: 75px; background: transparent;")
+        path = os.path.join(ROOT, "ui", "assets")
+        gifs = {
+            "idle": "lyra.gif",
+            "listening": "AI.gif",
+            "thinking": "AI.gif",
+            "speaking": "lyra.gif",
+        }
+
+        gif_path = os.path.join(path, gifs.get(state, "lyra.gif"))
+
+        if os.path.exists(gif_path):
+            self.movie.setFileName(gif_path)
+            self.movie.start()
         else:
-            self.setStyleSheet("border: none; background: transparent;")
-
-    def _start_cycle(self):
-        if self._busy:
-            return
-        self._busy   = True
-        self._worker = AssistantWorker()
-        self._worker.set_state.connect(self.set_state)
-        self._worker.done.connect(self._on_done)
-        self._worker.start()
-
-    def _on_done(self):
-        self._busy = False
-        # 1 second pause after speaking before listening again
-        # so the mic doesn't catch the tail end of TTS audio
-        QTimer.singleShot(1000, self._start_cycle)
+            print(f"Missing: {gif_path}")
 
     def show_avatar(self):
         self.show()
@@ -204,5 +304,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AvatarWindow()
     window.show_avatar()
-    print("🚀 Avatar running — look bottom-right of screen")
+    print("🚀 Lyra is running...")
     sys.exit(app.exec())
