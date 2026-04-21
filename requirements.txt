@@ -2,9 +2,9 @@ ollama
 faster-whisper
 pyttsx3
 sounddevice
-mss
+mss 
 Pillow
-pyautogui
-PyQt6
+pyautogui 
+PyQt6 #
 numpy
 requests

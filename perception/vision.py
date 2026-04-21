@@ -3,6 +3,8 @@ import base64
 import requests
 from io import BytesIO
 from PIL import Image
+
+
 from config import VISION_MODEL
 
 OLLAMA_URL = "http://localhost:11434/api/generate"

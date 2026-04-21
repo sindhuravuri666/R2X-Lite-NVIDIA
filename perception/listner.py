@@ -14,7 +14,7 @@ def get_model():
         model = WhisperModel(
             "tiny",
             device="cpu",
-            compute_type="int8",
+            compute_type="int8",# flloat16, int8, int4
             cpu_threads=2,
             num_workers=1
         )
